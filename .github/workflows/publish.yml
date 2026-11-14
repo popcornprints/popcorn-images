@@ -1,0 +1,40 @@
+name: Publish images
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+concurrency:
+  group: pages
+  cancel-in-progress: false
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download images
+        run: |
+          mkdir -p site/img
+          fail=0
+          while read -r id url; do
+            [ -z "$id" ] && continue
+            if ! curl -sSfL --retry 3 -o "site/img/$id.jpg" "$url"; then echo "FAILED $id"; fail=$((fail+1)); fi
+          done < images.txt
+          echo "Downloaded $(ls site/img | wc -l) images, $fail failed"
+          printf 'User-agent: *\nAllow: /\n' > site/robots.txt
+          echo '<p>Popcorn Prints images</p>' > site/index.html
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
