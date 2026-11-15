@@ -21,6 +21,7 @@ jobs:
           # id url per line; 8 downloads at a time, 3 retries each
           cat images.txt | xargs -P 8 -n 2 sh -c 'curl -sSfL --retry 3 -o "site/img/$0.jpg" "$1" || echo "FAILED $0"' | tee failed.txt
           echo "Downloaded $(ls site/img | wc -l) of $(wc -l < images.txt) images; $(grep -c FAILED failed.txt || true) failed"
+          cp feed.tsv site/feed.tsv
           printf 'User-agent: *\nAllow: /\n' > site/robots.txt
           echo '<p>Popcorn Prints images</p>' > site/index.html
           du -sh site
