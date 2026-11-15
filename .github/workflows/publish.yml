@@ -29,8 +29,13 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: a23d3fa9eeb6145283fd04e0162912dc
         run: |
-          npx --yes wrangler@3 pages project create popcorn-images --production-branch main || true
-          npx --yes wrangler@3 pages deploy site --project-name popcorn-images --branch main --commit-dirty=true
+          set +e
+          npx --yes wrangler@4 pages project create popcorn-images --production-branch main > create.log 2>&1
+          echo "::notice::project create: $(tail -c 300 create.log | tr '\n' ' ')"
+          npx --yes wrangler@4 pages deploy site --project-name popcorn-images --branch main --commit-dirty=true > deploy.log 2>&1
+          rc=$?
+          echo "::notice::deploy: $(tail -c 900 deploy.log | tr '\n' ' ')"
+          exit $rc
       - name: Keep the 50-image GitHub test site
         run: |
           mkdir -p gh/img
