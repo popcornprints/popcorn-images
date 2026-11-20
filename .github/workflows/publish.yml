@@ -15,6 +15,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Unpack compressed feed files
+        run: |
+          # The scheduled style run uploads feed.tsv.gz and images.txt.gz through the
+          # GitHub website (browser uploads are size-limited). If present, they replace
+          # feed.tsv / images.txt for this build.
+          if [ -f feed.tsv.gz ]; then gunzip -c feed.tsv.gz > feed.tsv; fi
+          if [ -f images.txt.gz ]; then gunzip -c images.txt.gz > images.txt; fi
+          wc -l feed.tsv images.txt
       - name: Download images
         run: |
           mkdir -p site/img
