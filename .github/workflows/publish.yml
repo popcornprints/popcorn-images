@@ -25,30 +25,45 @@ jobs:
           wc -l feed.tsv images.txt
       - name: Download images
         run: |
-          mkdir -p site/img
-          # id url per line; 8 downloads at a time, 3 retries each
-          cat images.txt | xargs -P 8 -n 2 sh -c 'curl -sSfL --retry 3 -o "site/img/$0.jpg" "$1" || echo "FAILED $0"' | tee failed.txt
-          echo "Downloaded $(ls site/img | wc -l) of $(wc -l < images.txt) images; $(grep -c FAILED failed.txt || true) failed"
-          cp feed.tsv site/feed.tsv
+          # Cloudflare Pages allows 20,000 files per site, so images are split over two sites:
+          # ids ending in an even digit -> popcorn-images, odd digit -> popcorn-images-2.
+          mkdir -p site/img site2/img
+          cat images.txt | xargs -P 8 -n 2 sh -c 'case "$0" in *[13579]) d=site2;; *) d=site;; esac; curl -sSfL --retry 3 -o "$d/img/$0.jpg" "$1" || echo "FAILED $0"' | tee failed.txt
+          echo "Downloaded $(ls site/img | wc -l) + $(ls site2/img | wc -l) of $(wc -l < images.txt) images; $(grep -c FAILED failed.txt || true) failed"
+          # point odd-id image links at the second site
+          python3 - <<'PY'
+          import re
+          out = []
+          for line in open('feed.tsv', encoding='utf-8'):
+              out.append(re.sub(r'https://popcorn-images\.pages\.dev/img/(\d*[13579])\.jpg', r'https://popcorn-images-2.pages.dev/img/\1.jpg', line))
+          open('site/feed.tsv', 'w', encoding='utf-8').writelines(out)
+          PY
+          grep -c 'popcorn-images-2.pages.dev' site/feed.tsv || true
           printf 'User-agent: *\nAllow: /\n' > site/robots.txt
+          cp site/robots.txt site2/robots.txt
           echo '<p>Popcorn Prints images</p>' > site/index.html
-          du -sh site
+          cp site/index.html site2/index.html
+          du -sh site site2
       - name: Deploy to Cloudflare Pages
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: a23d3fa9eeb6145283fd04e0162912dc
         run: |
           set +e
-          npx --yes wrangler@4 pages project create popcorn-images --production-branch main > create.log 2>&1
-          echo "::notice::project create: $(tail -c 300 create.log | tr '\n' ' ')"
-          npx --yes wrangler@4 pages deploy site --project-name popcorn-images --branch main --commit-dirty=true > deploy.log 2>&1
-          rc=$?
-          echo "::notice::deploy: $(tail -c 900 deploy.log | tr '\n' ' ')"
+          rc=0
+          for pair in "site popcorn-images" "site2 popcorn-images-2"; do
+            set -- $pair
+            npx --yes wrangler@4 pages project create $2 --production-branch main > create.log 2>&1
+            echo "::notice::$2 project create: $(tail -c 300 create.log | tr '\n' ' ')"
+            npx --yes wrangler@4 pages deploy $1 --project-name $2 --branch main --commit-dirty=true > deploy.log 2>&1
+            r=$?; [ $r -ne 0 ] && rc=$r
+            echo "::notice::$2 deploy: $(tail -c 700 deploy.log | tr '\n' ' ')"
+          done
           exit $rc
       - name: Keep the 50-image GitHub test site
         run: |
           mkdir -p gh/img
-          while read -r id; do cp "site/img/$id.jpg" gh/img/ 2>/dev/null || echo "missing $id"; done < test_ids.txt
+          while read -r id; do cp "site/img/$id.jpg" gh/img/ 2>/dev/null || cp "site2/img/$id.jpg" gh/img/ 2>/dev/null || echo "missing $id"; done < test_ids.txt
           cp site/robots.txt site/index.html gh/
       - uses: actions/upload-pages-artifact@v3
         with:
